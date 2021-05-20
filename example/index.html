@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title></title>
+</head>
+<body>
+<div id="content"></div>
+
+<script src="https://unpkg.com/react@16/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="application/javascript">
+  // some wild hacks to make this work in browser without building:
+  exports = {};
+  function require() { return React; }
+</script>
+<script src="../lib/index.js" type="application/javascript"></script>
+<script src="app.jsx" type="text/jsx" data-presets="react" ></script>
+</body>
+</html>

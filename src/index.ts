@@ -235,7 +235,6 @@ export function useReactMediaRecorder({
     }
 
     return () => {
-      console.log("unmounting");
       if (mediaStream.current) {
         const tracks = mediaStream.current.getTracks();
         tracks.forEach((track) => track.clone().stop());
@@ -340,7 +339,6 @@ export function useReactMediaRecorder({
   };
 
   const stopStream = () => {
-    console.log(mediaStream.current?.getTracks());
     if (mediaStream.current) {
       const tracks = mediaStream.current.getTracks();
       tracks.forEach((track) => track.stop());

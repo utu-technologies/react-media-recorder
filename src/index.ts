@@ -2,6 +2,23 @@ import { register, MediaRecorder as ExtendableMediaRecorder, IMediaRecorder } fr
 import { ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import { connect } from 'extendable-media-recorder-wav-encoder';
 
+export interface IVideoStorage {
+  /** Sets blob properties. This will be called only before the first call of storeChunk() after construction or reset(). */
+  setBlobProperties(blobProperties: BlobPropertyBag): void;
+
+  /** Handle recorded video chunk. */
+  storeChunk(chunk: Blob): void;
+
+  /** Informs this storage that the last chunk has been provided. */
+  stop(): void;
+
+  /** Gets the URL where the video is stored. */
+  getUrl(): string | null;
+
+  /** If this storage stores all chunks in a merged Blob, returns it; otherwise returns undefined.*/
+  getBlob(): Blob | undefined;
+}
+
 export type ReactMediaRecorderRenderProps = {
   error: string;
   muteAudio: () => void;
@@ -22,13 +39,15 @@ export type ReactMediaRecorderHookProps = {
   audio?: boolean | MediaTrackConstraints;
   video?: boolean | MediaTrackConstraints;
   screen?: boolean;
-  onStop?: (blobUrl: string, blob: Blob) => void;
+  onStop?: (blobUrl: string | undefined, blob: Blob | undefined) => void;
   onStart?: () => void;
   blobPropertyBag?: BlobPropertyBag;
   mediaRecorderOptions?: MediaRecorderOptions | undefined;
   customMediaStream?: MediaStream | null;
   stopStreamsOnStop?: boolean;
   askPermissionOnMount?: boolean;
+  videoStorageFactory?: () => IVideoStorage;
+  timeslice?: number;
 };
 export type ReactMediaRecorderProps = ReactMediaRecorderHookProps & {
   render: (props: ReactMediaRecorderRenderProps) => ReactElement;
@@ -61,6 +80,32 @@ export enum RecorderErrors {
   NO_RECORDER = "recorder_error",
 }
 
+export class ObjectUrlStorage implements IVideoStorage {
+  blobProperties: any;
+  url: string | null = null;
+  blob: Blob = new Blob();
+  mediaChunks: Blob[] = [];
+
+  setBlobProperties(blobProperties: BlobPropertyBag): void {
+    this.blobProperties = blobProperties;
+  }
+  storeChunk(chunk: Blob) {
+    this.mediaChunks.push(chunk);
+  }
+  stop() {
+    let blob = new Blob(this.mediaChunks, this.blobProperties);
+    let url = URL.createObjectURL(blob);
+    this.blob = blob;
+    this.url = url;
+  }
+  getUrl(): string | null {
+    return this.url;
+  }
+  getBlob(): Blob | undefined {
+    return this.blob;
+  }
+}
+
 export function useReactMediaRecorder({
   audio = true,
   video = false,
@@ -72,9 +117,11 @@ export function useReactMediaRecorder({
   customMediaStream = null,
   stopStreamsOnStop = true,
   askPermissionOnMount = false,
+  videoStorageFactory = () => new ObjectUrlStorage(),
+  timeslice = undefined
 }: ReactMediaRecorderHookProps): ReactMediaRecorderRenderProps {
   const mediaRecorder = useRef<IMediaRecorder | null >(null);
-  const mediaChunks = useRef<Blob[]>([]);
+  const videoStorage = useRef<IVideoStorage | null>(null);
   const mediaStream = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<StatusMessages>("idle");
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
@@ -87,6 +134,8 @@ export function useReactMediaRecorder({
     };
     setup();
   }, []);
+
+  let blobPropertiesSet = false;
 
   const getMediaStream = useCallback(async () => {
     setStatus("acquiring_media");
@@ -208,6 +257,11 @@ export function useReactMediaRecorder({
       if (!mediaStream.current.active) {
         return;
       }
+
+      // Initialise new storage
+      videoStorage.current = videoStorageFactory();
+      blobPropertiesSet = false;
+
       mediaRecorder.current = new ExtendableMediaRecorder(
         mediaStream.current, mediaRecorderOptions || undefined,
       );
@@ -218,13 +272,24 @@ export function useReactMediaRecorder({
         setError("NO_RECORDER");
         setStatus("idle");
       };
-      mediaRecorder.current.start();
+      mediaRecorder.current.start(timeslice);
       setStatus("recording");
     }
   };
 
   const onRecordingActive = ({ data }: BlobEvent) => {
-    mediaChunks.current.push(data);
+    if (!blobPropertiesSet) {
+      const blobProperties: BlobPropertyBag = Object.assign(
+        { type: data.type },
+        blobPropertyBag ||
+          (video ? { type: "video/mp4" } : { type: "audio/wav" })
+      );
+
+      videoStorage.current?.setBlobProperties(blobProperties);
+      blobPropertiesSet = true;
+    }
+
+    videoStorage.current?.storeChunk(data);
   };
 
   const onRecordingStart = () => {
@@ -232,16 +297,11 @@ export function useReactMediaRecorder({
   };
 
   const onRecordingStop = () => {
-    const [chunk] = mediaChunks.current;
-    const blobProperty: BlobPropertyBag = Object.assign(
-      { type: chunk.type },
-      blobPropertyBag || (video ? { type: "video/mp4" } : { type: "audio/wav" }),
-    );
-    const blob = new Blob(mediaChunks.current, blobProperty);
-    const url = URL.createObjectURL(blob);
+    videoStorage.current?.stop();
+    const url = videoStorage.current?.getUrl() ?? undefined;
     setStatus("stopped");
     setMediaBlobUrl(url);
-    onStop(url, blob);
+    onStop(url, videoStorage.current?.getBlob());
   };
 
   const muteAudio = (mute: boolean) => {
@@ -271,12 +331,11 @@ export function useReactMediaRecorder({
       if (mediaRecorder.current.state !== "inactive") {
         setStatus("stopping");
         mediaRecorder.current.stop();
-        if (stopStreamsOnStop) {
-          mediaStream.current &&
-            mediaStream.current.getTracks().forEach((track) => track.stop());
-        }
-        mediaChunks.current = [];
       }
+    }
+    if (stopStreamsOnStop) {
+      mediaStream.current &&
+        mediaStream.current.getTracks().forEach((track) => track.stop());
     }
   };
 

@@ -187,7 +187,6 @@ export function useReactMediaRecorder({
   }, [audio, video, screen]);
 
   useEffect(() => {
-    console.log("mounting stream");
 
     if (!window.MediaRecorder) {
       throw new Error("Unsupported Browser");
@@ -241,7 +240,6 @@ export function useReactMediaRecorder({
         const tracks = mediaStream.current.getTracks();
         tracks.forEach((track) => track.clone().stop());
       }
-      // stopStream();
     };
   }, [
     audio,

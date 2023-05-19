@@ -294,7 +294,7 @@ export function useReactMediaRecorder({
       const blobProperties: BlobPropertyBag = Object.assign(
         { type: data.type },
         blobPropertyBag ||
-          (video ? { type: "video/mp4" } : { type: "audio/wav" })
+        (video ? { type: "video/mp4" } : { type: "audio/wav" })
       );
 
       videoStorage.current?.setBlobProperties(blobProperties);
@@ -339,9 +339,15 @@ export function useReactMediaRecorder({
   };
 
   const stopStream = () => {
+
+    console.log('In stopStream');
+
     if (mediaStream.current) {
       const tracks = mediaStream.current.getTracks();
-      tracks.forEach((track) => track.stop());
+      tracks.forEach((track) => {
+        track.stop();
+        console.log('Stopped track', track);
+      });
     }
   };
 
